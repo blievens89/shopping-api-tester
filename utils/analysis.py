@@ -19,11 +19,14 @@ def parse_shopping_results(api_response: Dict) -> pd.DataFrame:
     if not results:
         return pd.DataFrame()
     items = results[0].get("items") or []
+    accept = {"google_shopping_product", "shopping_product", "product", "google_shopping_serp"}
     out = []
     for it in items:
-        if it.get("type") not in ("google_shopping_product", "shopping_product", "product"):
+        if it.get("type") not in accept:
             continue
         price, currency = _safe_price(it)
+        url = it.get("url") or it.get("shopping_url")
+        pid = it.get("product_id") or it.get("data_docid") or it.get("gid")
         out.append({
             "position": it.get("rank_absolute"),
             "title": it.get("title"),
@@ -31,15 +34,19 @@ def parse_shopping_results(api_response: Dict) -> pd.DataFrame:
             "price": price,
             "currency": currency,
             "rating": (it.get("product_rating") or {}).get("value"),
-            "reviews": it.get("reviews_count"),
-            "product_id": it.get("product_id"),
-            "url": it.get("url"),
+            "reviews": it.get("votes_count") or it.get("reviews_count"),
+            "product_id": pid,
+            "url": url,
+            "images_count": len(it.get("product_images") or it.get("images") or []),
+            "has_description": bool(it.get("description") or it.get("product_description")),
+            "has_highlights": bool(it.get("product_highlights") or it.get("highlights") or it.get("features")),
         })
     df = pd.DataFrame(out)
-    if not df.empty:
-        df["domain"] = df["domain"].astype(str).str.replace(r"^https?://", "", regex=True).str.split("/").str[0]
-        if "position" in df:
-            df = df.sort_values("position", na_position="last").reset_index(drop=True)
+    if df.empty:
+        return df
+    df["domain"] = df["domain"].astype(str).str.replace(r"^https?://", "", regex=True).str.split("/").str[0]
+    if "position" in df:
+        df = df.sort_values("position", na_position="last").reset_index(drop=True)
     return df
 
 def analyze_competitors(df: pd.DataFrame, target_domains: List[str] | None = None) -> Dict:
