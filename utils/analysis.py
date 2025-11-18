@@ -27,6 +27,15 @@ def parse_shopping_results(api_response: Dict) -> pd.DataFrame:
         price, currency = _safe_price(it)
         url = it.get("url") or it.get("shopping_url")
         pid = it.get("product_id") or it.get("data_docid") or it.get("gid")
+        # Extract full rich content instead of just metadata
+        images = it.get("product_images") or it.get("images") or []
+        description = it.get("description") or it.get("product_description") or ""
+        highlights = it.get("product_highlights") or it.get("highlights") or it.get("features") or []
+
+        # Convert highlights dict to list if needed
+        if isinstance(highlights, dict):
+            highlights = [f"{k}: {v}" for k, v in highlights.items()]
+
         out.append({
             "position": it.get("rank_absolute"),
             "title": it.get("title"),
@@ -37,9 +46,13 @@ def parse_shopping_results(api_response: Dict) -> pd.DataFrame:
             "reviews": it.get("votes_count") or it.get("reviews_count"),
             "product_id": pid,
             "url": url,
-            "images_count": len(it.get("product_images") or it.get("images") or []),
-            "has_description": bool(it.get("description") or it.get("product_description")),
-            "has_highlights": bool(it.get("product_highlights") or it.get("highlights") or it.get("features")),
+            "images": images,  # Store full array of image URLs
+            "images_count": len(images),
+            "description": description,  # Store full description text
+            "description_preview": description[:100] + "..." if len(description) > 100 else description,  # First 100 chars
+            "has_description": bool(description),
+            "highlights": highlights,  # Store full highlights/features array
+            "has_highlights": bool(highlights),
         })
     df = pd.DataFrame(out)
     if df.empty:
