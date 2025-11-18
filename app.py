@@ -171,15 +171,34 @@ if "results_df" in st.session_state:
                         st.write(row["description_preview"])
                         st.markdown("---")
 
-                    # Show images if available
+                    # Show images with carousel if available
                     if has_images:
                         st.markdown("**Product Images:**")
-                        images_to_show = row["images"][:3]
-                        if images_to_show:
-                            cols = st.columns(len(images_to_show))
-                            for col_idx, img_url in enumerate(images_to_show):
-                                with cols[col_idx]:
-                                    st.image(img_url, use_column_width=True)
+                        images_list = row["images"]
+
+                        # Initialize session state for this product's carousel
+                        carousel_key = f"carousel_overview_{int(row['position'])}"
+                        if carousel_key not in st.session_state:
+                            st.session_state[carousel_key] = 0
+
+                        # Display current image
+                        current_idx = st.session_state[carousel_key]
+                        current_idx = max(0, min(current_idx, len(images_list) - 1))
+
+                        st.image(images_list[current_idx], use_column_width=True)
+
+                        # Navigation controls
+                        col1, col2, col3 = st.columns([1, 2, 1])
+                        with col1:
+                            if st.button("◀ Previous", key=f"prev_{carousel_key}", disabled=(current_idx == 0)):
+                                st.session_state[carousel_key] = current_idx - 1
+                                st.rerun()
+                        with col2:
+                            st.markdown(f"<center>Image {current_idx + 1} of {len(images_list)}</center>", unsafe_allow_html=True)
+                        with col3:
+                            if st.button("Next ▶", key=f"next_{carousel_key}", disabled=(current_idx >= len(images_list) - 1)):
+                                st.session_state[carousel_key] = current_idx + 1
+                                st.rerun()
 
         st.markdown("---")
         st.subheader("Domain Frequency")
@@ -235,11 +254,35 @@ if "results_df" in st.session_state:
                 st.write("**Title:**", df.iloc[idx]["title"])
                 st.write("**Domain:**", df.iloc[idx]["domain"])
                 st.write("**Price:**", df.iloc[idx]["price"], df.iloc[idx].get("currency", ""))
+
+                # Show images with carousel if available
                 if df.iloc[idx].get("images"):
+                    imgs_from_search = df.iloc[idx]["images"]
                     st.write("**Images:**")
-                    imgs_from_search = df.iloc[idx]["images"][:3]
-                    if imgs_from_search:
-                        st.image(imgs_from_search, use_column_width=True)
+
+                    # Initialize carousel for fallback
+                    carousel_key_fb = f"carousel_fallback_{idx}"
+                    if carousel_key_fb not in st.session_state:
+                        st.session_state[carousel_key_fb] = 0
+
+                    current_idx_fb = st.session_state[carousel_key_fb]
+                    current_idx_fb = max(0, min(current_idx_fb, len(imgs_from_search) - 1))
+
+                    st.image(imgs_from_search[current_idx_fb], use_column_width=True)
+
+                    # Navigation
+                    col1, col2, col3 = st.columns([1, 2, 1])
+                    with col1:
+                        if st.button("◀ Prev", key=f"prev_fb_{idx}", disabled=(current_idx_fb == 0)):
+                            st.session_state[carousel_key_fb] = current_idx_fb - 1
+                            st.rerun()
+                    with col2:
+                        st.markdown(f"<center>{current_idx_fb + 1}/{len(imgs_from_search)}</center>", unsafe_allow_html=True)
+                    with col3:
+                        if st.button("Next ▶", key=f"next_fb_{idx}", disabled=(current_idx_fb >= len(imgs_from_search) - 1)):
+                            st.session_state[carousel_key_fb] = current_idx_fb + 1
+                            st.rerun()
+
                 if df.iloc[idx].get("description"):
                     st.write("**Description:**")
                     st.write(df.iloc[idx]["description"])
@@ -266,7 +309,6 @@ if "results_df" in st.session_state:
 
             show_desc = st.toggle("Show product description", value=True)  # Changed default to True
             show_high = st.toggle("Show product highlights/features", value=True)  # Changed default to True
-            max_imgs = st.slider("Show up to N images", min_value=0, max_value=10, value=4)
 
             left, right = st.columns([2,1])
             with left:
@@ -281,10 +323,32 @@ if "results_df" in st.session_state:
                 st.write("**Reviews:**", reviews_val if reviews_val else "—")
 
             with right:
-                # Prefer detailed API images, fall back to search data images
+                # Image carousel for drill-down
                 imgs = item.get("product_images") or item.get("images") or search_data.get("images") or []
-                if max_imgs and imgs:
-                    st.image(imgs[:max_imgs], use_column_width=True)
+                if imgs:
+                    # Initialize carousel state
+                    carousel_key = f"carousel_drilldown_{pid}"
+                    if carousel_key not in st.session_state:
+                        st.session_state[carousel_key] = 0
+
+                    current_idx = st.session_state[carousel_key]
+                    current_idx = max(0, min(current_idx, len(imgs) - 1))
+
+                    # Display current image
+                    st.image(imgs[current_idx], use_column_width=True)
+
+                    # Navigation controls
+                    col1, col2, col3 = st.columns([1, 2, 1])
+                    with col1:
+                        if st.button("◀ Prev", key=f"prev_drill_{pid}", disabled=(current_idx == 0)):
+                            st.session_state[carousel_key] = current_idx - 1
+                            st.rerun()
+                    with col2:
+                        st.markdown(f"<center>{current_idx + 1}/{len(imgs)}</center>", unsafe_allow_html=True)
+                    with col3:
+                        if st.button("Next ▶", key=f"next_drill_{pid}", disabled=(current_idx >= len(imgs) - 1)):
+                            st.session_state[carousel_key] = current_idx + 1
+                            st.rerun()
 
             if show_desc:
                 st.markdown("### Description")
