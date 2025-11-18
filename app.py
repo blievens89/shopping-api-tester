@@ -140,6 +140,13 @@ if "results_df" in st.session_state:
     with tab1:
         st.subheader("Top 10 Products")
 
+        # Show data extraction stats
+        desc_count = df["description"].apply(lambda x: len(str(x)) > 0).sum() if "description" in df.columns else 0
+        img_count = df["images"].apply(lambda x: len(x) > 0 if isinstance(x, list) else False).sum() if "images" in df.columns else 0
+        highlights_count = df["highlights"].apply(lambda x: len(x) > 0 if isinstance(x, list) else False).sum() if "highlights" in df.columns else 0
+
+        st.info(f"📊 Data extracted: **{desc_count}/{len(df)}** products with descriptions | **{img_count}/{len(df)}** with images | **{highlights_count}/{len(df)}** with highlights")
+
         # Calculate title quality for display
         top10 = df.head(10).copy()
         top10["title_quality"] = top10["title"].apply(calculate_title_quality_score)
@@ -149,22 +156,30 @@ if "results_df" in st.session_state:
         available_cols = [col for col in display_cols if col in top10.columns]
         st.dataframe(top10[available_cols], use_container_width=True)
 
-        # Show images for each product
-        st.markdown("#### Product Images (Top 10)")
+        # Show images and descriptions for each product
+        st.markdown("#### Product Details (Top 10)")
         for idx, row in top10.iterrows():
-            if row.get("images") and len(row["images"]) > 0:
+            # Show expander for any product with images OR description
+            has_images = row.get("images") and len(row["images"]) > 0
+            has_desc = row.get("description") and len(str(row.get("description", ""))) > 0
+
+            if has_images or has_desc:
                 with st.expander(f"#{int(row['position'])} - {row['title'][:60]}..."):
-                    # Show first 3 images
-                    images_to_show = row["images"][:3]
-                    if images_to_show:
-                        cols = st.columns(len(images_to_show))
-                        for col_idx, img_url in enumerate(images_to_show):
-                            with cols[col_idx]:
-                                st.image(img_url, use_column_width=True)
-                    # Show description preview if available
-                    if row.get("description"):
+                    # Show description first if available
+                    if has_desc:
                         st.markdown("**Description:**")
                         st.write(row["description_preview"])
+                        st.markdown("---")
+
+                    # Show images if available
+                    if has_images:
+                        st.markdown("**Product Images:**")
+                        images_to_show = row["images"][:3]
+                        if images_to_show:
+                            cols = st.columns(len(images_to_show))
+                            for col_idx, img_url in enumerate(images_to_show):
+                                with cols[col_idx]:
+                                    st.image(img_url, use_column_width=True)
 
         st.markdown("---")
         st.subheader("Domain Frequency")
