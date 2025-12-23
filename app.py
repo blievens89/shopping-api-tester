@@ -8,6 +8,87 @@ from utils.analysis import parse_shopping_results, analyze_competitors, calculat
 load_dotenv()
 
 st.set_page_config(page_title="Google Shopping Competitive Analysis", page_icon="🛍️", layout="wide")
+
+# Custom CSS for image sizing and highlights
+st.markdown("""
+<style>
+/* Constrain image sizes */
+.product-image-container img {
+    max-height: 280px;
+    width: auto;
+    object-fit: contain;
+    display: block;
+    margin: 0 auto;
+}
+.thumbnail-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+}
+.thumbnail-grid img {
+    width: 60px;
+    height: 60px;
+    object-fit: cover;
+    border: 2px solid transparent;
+    border-radius: 4px;
+    cursor: pointer;
+}
+.thumbnail-grid img:hover {
+    border-color: #ff4b4b;
+}
+.thumbnail-grid img.active {
+    border-color: #ff4b4b;
+}
+/* Highlights styling */
+.highlight-chip {
+    display: inline-block;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 6px 12px;
+    border-radius: 16px;
+    margin: 4px;
+    font-size: 0.85em;
+    font-weight: 500;
+}
+.highlight-list {
+    background: #f8f9fa;
+    border-left: 4px solid #667eea;
+    padding: 12px 16px;
+    margin: 8px 0;
+    border-radius: 0 8px 8px 0;
+}
+.highlight-list li {
+    margin: 6px 0;
+    color: #333;
+}
+/* Seller card styling */
+.seller-card {
+    background: #ffffff;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 12px;
+    margin: 8px 0;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+.seller-price {
+    font-size: 1.2em;
+    font-weight: bold;
+    color: #2e7d32;
+}
+/* Variation badges */
+.variation-badge {
+    display: inline-block;
+    background: #e3f2fd;
+    color: #1565c0;
+    padding: 4px 10px;
+    border-radius: 12px;
+    margin: 3px;
+    font-size: 0.8em;
+}
+</style>
+""", unsafe_allow_html=True)
+
 st.title("Google Shopping Competitive Analysis")
 st.caption("DataForSEO → Streamlit tester")
 
@@ -52,6 +133,124 @@ def search_with_progress(k: str, loc: int, dep: int):
     prog.progress(100); status.success("Results received")
     df = parse_shopping_results(data)
     return data, df
+
+def get_cached_product_info(pid: str, loc: int):
+    """Fetch product info with session state caching to prevent refetch on rerun."""
+    cache_key = f"product_cache_{pid}_{loc}"
+    if cache_key not in st.session_state:
+        prog = st.progress(0); status = st.empty()
+        def on_tick(elapsed, maximum):
+            pct = min(99, int((elapsed / max(1, maximum)) * 100))
+            prog.progress(pct)
+            status.info(f"Fetching product details… {elapsed}s / {maximum}s")
+        try:
+            details = client.get_product_info(pid, location_code=loc, on_tick=on_tick)
+            prog.progress(100); status.success("Details cached")
+            st.session_state[cache_key] = {"data": details, "error": None}
+        except Exception as e:
+            status.error(f"Detail fetch failed: {e}")
+            st.session_state[cache_key] = {"data": None, "error": str(e)}
+    return st.session_state[cache_key]
+
+def render_image_carousel(images: list, carousel_key: str, show_thumbnails: bool = True):
+    """Render an image carousel with optional thumbnail navigation."""
+    if not images:
+        st.info("No images available")
+        return
+
+    # Initialize carousel state
+    if carousel_key not in st.session_state:
+        st.session_state[carousel_key] = 0
+
+    current_idx = st.session_state[carousel_key]
+    current_idx = max(0, min(current_idx, len(images) - 1))
+    st.session_state[carousel_key] = current_idx  # Sync back
+
+    # Main image with constrained container
+    st.markdown(f'<div class="product-image-container">', unsafe_allow_html=True)
+    st.image(images[current_idx], use_column_width=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # Navigation controls
+    if len(images) > 1:
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col1:
+            if st.button("◀ Prev", key=f"prev_{carousel_key}", disabled=(current_idx == 0)):
+                st.session_state[carousel_key] = current_idx - 1
+                st.rerun()
+        with col2:
+            st.markdown(f"<center><strong>{current_idx + 1} / {len(images)}</strong></center>", unsafe_allow_html=True)
+        with col3:
+            if st.button("Next ▶", key=f"next_{carousel_key}", disabled=(current_idx >= len(images) - 1)):
+                st.session_state[carousel_key] = current_idx + 1
+                st.rerun()
+
+        # Thumbnail grid
+        if show_thumbnails and len(images) > 1:
+            st.markdown("**Quick navigation:**")
+            thumb_cols = st.columns(min(len(images), 6))
+            for i, img_url in enumerate(images[:6]):
+                with thumb_cols[i]:
+                    border = "2px solid #ff4b4b" if i == current_idx else "2px solid #ddd"
+                    st.markdown(f'''
+                        <div style="border: {border}; border-radius: 4px; padding: 2px; cursor: pointer;">
+                            <img src="{img_url}" style="width: 100%; height: 50px; object-fit: cover; border-radius: 2px;">
+                        </div>
+                    ''', unsafe_allow_html=True)
+                    if st.button("Select", key=f"thumb_{carousel_key}_{i}", use_container_width=True):
+                        st.session_state[carousel_key] = i
+                        st.rerun()
+
+def render_highlights(highlights: list, style: str = "chips"):
+    """Render product highlights with improved visibility."""
+    if not highlights:
+        st.write("—")
+        return
+
+    if style == "chips":
+        chips_html = "".join([f'<span class="highlight-chip">{h}</span>' for h in highlights])
+        st.markdown(f'<div style="margin: 10px 0;">{chips_html}</div>', unsafe_allow_html=True)
+    else:
+        items = "".join([f'<li>{h}</li>' for h in highlights])
+        st.markdown(f'<div class="highlight-list"><ul style="margin: 0; padding-left: 20px;">{items}</ul></div>', unsafe_allow_html=True)
+
+def render_sellers(sellers: list, currency_symbol: str = "£"):
+    """Render seller comparison cards."""
+    if not sellers:
+        st.info("No seller data available")
+        return
+
+    for seller in sellers[:5]:  # Show top 5 sellers
+        price = seller.get("price") or {}
+        price_val = price.get("current") or price.get("regular") or seller.get("price")
+        seller_name = seller.get("seller") or seller.get("title") or "Unknown"
+
+        st.markdown(f'''
+            <div class="seller-card">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <strong>{seller_name}</strong><br>
+                        <small style="color: #666;">{seller.get("delivery_info") or ""}</small>
+                    </div>
+                    <div class="seller-price">{currency_symbol}{price_val:.2f if isinstance(price_val, (int, float)) else price_val}</div>
+                </div>
+            </div>
+        ''', unsafe_allow_html=True)
+
+def render_variations(variations: list):
+    """Render product variations as badges."""
+    if not variations:
+        return
+
+    st.markdown("**Available Variations:**")
+    badges = []
+    for var in variations[:12]:  # Limit to 12
+        var_text = var.get("title") or var.get("value") or str(var)
+        if isinstance(var_text, str) and len(var_text) < 50:
+            badges.append(f'<span class="variation-badge">{var_text}</span>')
+
+    if badges:
+        st.markdown(f'<div style="margin: 8px 0;">{"".join(badges)}</div>', unsafe_allow_html=True)
 
 if st.button("🔍 Search Products", type="primary"):
     if not keyword and not uploaded:
@@ -159,46 +358,32 @@ if "results_df" in st.session_state:
         # Show images and descriptions for each product
         st.markdown("#### Product Details (Top 10)")
         for idx, row in top10.iterrows():
-            # Show expander for any product with images OR description
+            # Show expander for any product with images OR description OR highlights
             has_images = row.get("images") and len(row["images"]) > 0
             has_desc = row.get("description") and len(str(row.get("description", ""))) > 0
+            has_highlights = row.get("highlights") and len(row["highlights"]) > 0
 
-            if has_images or has_desc:
+            if has_images or has_desc or has_highlights:
                 with st.expander(f"#{int(row['position'])} - {row['title'][:60]}..."):
-                    # Show description first if available
-                    if has_desc:
-                        st.markdown("**Description:**")
-                        st.write(row["description_preview"])
-                        st.markdown("---")
+                    col_left, col_right = st.columns([1, 1])
 
-                    # Show images with carousel if available
-                    if has_images:
-                        st.markdown("**Product Images:**")
-                        images_list = row["images"]
+                    with col_left:
+                        # Show description if available
+                        if has_desc:
+                            st.markdown("**Description:**")
+                            st.write(row["description"])
 
-                        # Initialize session state for this product's carousel
-                        carousel_key = f"carousel_overview_{int(row['position'])}"
-                        if carousel_key not in st.session_state:
-                            st.session_state[carousel_key] = 0
+                        # Show highlights with improved styling
+                        if has_highlights:
+                            st.markdown("**Key Features:**")
+                            render_highlights(row["highlights"], style="list")
 
-                        # Display current image
-                        current_idx = st.session_state[carousel_key]
-                        current_idx = max(0, min(current_idx, len(images_list) - 1))
-
-                        st.image(images_list[current_idx], use_column_width=True)
-
-                        # Navigation controls
-                        col1, col2, col3 = st.columns([1, 2, 1])
-                        with col1:
-                            if st.button("◀ Previous", key=f"prev_{carousel_key}", disabled=(current_idx == 0)):
-                                st.session_state[carousel_key] = current_idx - 1
-                                st.rerun()
-                        with col2:
-                            st.markdown(f"<center>Image {current_idx + 1} of {len(images_list)}</center>", unsafe_allow_html=True)
-                        with col3:
-                            if st.button("Next ▶", key=f"next_{carousel_key}", disabled=(current_idx >= len(images_list) - 1)):
-                                st.session_state[carousel_key] = current_idx + 1
-                                st.rerun()
+                    with col_right:
+                        # Show images with carousel if available
+                        if has_images:
+                            st.markdown("**Product Images:**")
+                            carousel_key = f"carousel_overview_{int(row['position'])}"
+                            render_image_carousel(row["images"], carousel_key, show_thumbnails=True)
 
         st.markdown("---")
         st.subheader("Domain Frequency")
@@ -246,128 +431,108 @@ if "results_df" in st.session_state:
             choice = st.selectbox("Pick a product", options=display.tolist())
             idx = display.tolist().index(choice)
             pid = df.iloc[idx]["product_id"]
+            search_data = df.iloc[idx]
 
-            # Validate product_id before making API call
-            if not pid or pd.isna(pid):
-                st.warning("⚠️ This product has no product_id. Cannot fetch detailed information.")
-                st.info("You can still view the data from the search results:")
-                st.write("**Title:**", df.iloc[idx]["title"])
-                st.write("**Domain:**", df.iloc[idx]["domain"])
-                st.write("**Price:**", df.iloc[idx]["price"], df.iloc[idx].get("currency", ""))
-
-                # Show images with carousel if available
-                if df.iloc[idx].get("images"):
-                    imgs_from_search = df.iloc[idx]["images"]
-                    st.write("**Images:**")
-
-                    # Initialize carousel for fallback
-                    carousel_key_fb = f"carousel_fallback_{idx}"
-                    if carousel_key_fb not in st.session_state:
-                        st.session_state[carousel_key_fb] = 0
-
-                    current_idx_fb = st.session_state[carousel_key_fb]
-                    current_idx_fb = max(0, min(current_idx_fb, len(imgs_from_search) - 1))
-
-                    st.image(imgs_from_search[current_idx_fb], use_column_width=True)
-
-                    # Navigation
-                    col1, col2, col3 = st.columns([1, 2, 1])
-                    with col1:
-                        if st.button("◀ Prev", key=f"prev_fb_{idx}", disabled=(current_idx_fb == 0)):
-                            st.session_state[carousel_key_fb] = current_idx_fb - 1
-                            st.rerun()
-                    with col2:
-                        st.markdown(f"<center>{current_idx_fb + 1}/{len(imgs_from_search)}</center>", unsafe_allow_html=True)
-                    with col3:
-                        if st.button("Next ▶", key=f"next_fb_{idx}", disabled=(current_idx_fb >= len(imgs_from_search) - 1)):
-                            st.session_state[carousel_key_fb] = current_idx_fb + 1
-                            st.rerun()
-
-                if df.iloc[idx].get("description"):
-                    st.write("**Description:**")
-                    st.write(df.iloc[idx]["description"])
-                details = None
-            else:
-                p2 = st.progress(0); s2 = st.empty()
-                def tick2(el, mx):
-                    pct = min(99, int((el/max(1,mx))*100)); p2.progress(pct); s2.info(f"Fetching details… {el}s / {mx}s")
-
-                try:
-                    details = client.get_product_info(pid, location_code=location_code, on_tick=tick2)
-                    p2.progress(100); s2.success("Details received")
-                except Exception as e:
-                    s2.error(f"Detail fetch failed: {e}")
-                    details = None
-
+            # Helper to extract details from API response
             def _extract_details(d):
                 items = (((d or {}).get("tasks") or [{}])[0].get("result") or [{}])[0].get("items") or []
                 return items[0] if items else {}
-            item = _extract_details(details)
 
-            # Get data from search results as fallback
-            search_data = df.iloc[idx]
+            # Validate product_id and fetch with caching
+            if not pid or pd.isna(pid):
+                st.warning("This product has no product_id. Showing search results data only.")
+                details = None
+                item = {}
+            else:
+                # Use cached API call - prevents refetch on carousel navigation
+                cached = get_cached_product_info(str(pid), location_code)
+                if cached["error"]:
+                    st.error(f"Could not fetch details: {cached['error']}")
+                details = cached["data"]
+                item = _extract_details(details)
 
-            show_desc = st.toggle("Show product description", value=True)  # Changed default to True
-            show_high = st.toggle("Show product highlights/features", value=True)  # Changed default to True
+            # Display options
+            col_opts = st.columns(4)
+            with col_opts[0]:
+                show_desc = st.toggle("Description", value=True)
+            with col_opts[1]:
+                show_high = st.toggle("Highlights", value=True)
+            with col_opts[2]:
+                show_sellers = st.toggle("Compare Sellers", value=True)
+            with col_opts[3]:
+                show_raw = st.toggle("Raw JSON", value=False)
 
-            left, right = st.columns([2,1])
+            # Main content layout
+            left, right = st.columns([2, 1])
+
             with left:
-                st.write("**Title:**", item.get("title") or search_data.get("title"))
-                st.write("**Seller/Domain:**", item.get("seller") or item.get("domain") or search_data.get("domain"))
-                st.write("**Price:**", item.get("price") or search_data.get("price"))
-                st.write("**Currency:**", item.get("currency") or search_data.get("currency"))
-                # Prefer detailed API data, fall back to search data
-                rating_val = (item.get("product_rating") or {}).get("value") or search_data.get("rating")
-                st.write("**Rating:**", rating_val if rating_val else "—")
-                reviews_val = (item.get("product_rating") or {}).get("votes_count") or item.get("reviews_count") or search_data.get("reviews")
-                st.write("**Reviews:**", reviews_val if reviews_val else "—")
+                # Basic product info
+                st.markdown("### Product Info")
+                title = item.get("title") or search_data.get("title")
+                st.markdown(f"**{title}**")
+
+                info_col1, info_col2 = st.columns(2)
+                with info_col1:
+                    st.write("**Seller:**", item.get("seller") or item.get("domain") or search_data.get("domain"))
+                    price_val = item.get("price") or search_data.get("price")
+                    curr = item.get("currency") or search_data.get("currency") or ""
+                    if price_val:
+                        st.markdown(f"**Price:** <span style='font-size: 1.3em; color: #2e7d32; font-weight: bold;'>{currency_symbol}{price_val}</span>", unsafe_allow_html=True)
+                with info_col2:
+                    rating_val = (item.get("product_rating") or {}).get("value") or search_data.get("rating")
+                    reviews_val = (item.get("product_rating") or {}).get("votes_count") or item.get("reviews_count") or search_data.get("reviews")
+                    if rating_val:
+                        stars = "★" * int(float(rating_val)) + "☆" * (5 - int(float(rating_val)))
+                        st.markdown(f"**Rating:** {stars} ({rating_val})")
+                    if reviews_val:
+                        st.write(f"**Reviews:** {reviews_val:,}" if isinstance(reviews_val, int) else f"**Reviews:** {reviews_val}")
+
+                # Product variations (colors, sizes, etc.)
+                variations = item.get("product_variations") or item.get("variations") or []
+                if variations:
+                    st.markdown("---")
+                    render_variations(variations)
 
             with right:
-                # Image carousel for drill-down
+                # Image carousel with thumbnails
                 imgs = item.get("product_images") or item.get("images") or search_data.get("images") or []
                 if imgs:
-                    # Initialize carousel state
-                    carousel_key = f"carousel_drilldown_{pid}"
-                    if carousel_key not in st.session_state:
-                        st.session_state[carousel_key] = 0
+                    carousel_key = f"carousel_drilldown_{pid or idx}"
+                    render_image_carousel(imgs, carousel_key, show_thumbnails=True)
+                else:
+                    st.info("No images available")
 
-                    current_idx = st.session_state[carousel_key]
-                    current_idx = max(0, min(current_idx, len(imgs) - 1))
-
-                    # Display current image
-                    st.image(imgs[current_idx], use_column_width=True)
-
-                    # Navigation controls
-                    col1, col2, col3 = st.columns([1, 2, 1])
-                    with col1:
-                        if st.button("◀ Prev", key=f"prev_drill_{pid}", disabled=(current_idx == 0)):
-                            st.session_state[carousel_key] = current_idx - 1
-                            st.rerun()
-                    with col2:
-                        st.markdown(f"<center>{current_idx + 1}/{len(imgs)}</center>", unsafe_allow_html=True)
-                    with col3:
-                        if st.button("Next ▶", key=f"next_drill_{pid}", disabled=(current_idx >= len(imgs) - 1)):
-                            st.session_state[carousel_key] = current_idx + 1
-                            st.rerun()
-
+            # Description section
             if show_desc:
+                st.markdown("---")
                 st.markdown("### Description")
-                # Prefer detailed API description, fall back to search data
-                desc = item.get("description") or item.get("product_description") or search_data.get("description") or "—"
-                st.write(desc)
+                desc = item.get("description") or item.get("product_description") or search_data.get("description")
+                if desc:
+                    st.write(desc)
+                else:
+                    st.write("No description available")
 
+            # Highlights section with improved styling
             if show_high:
-                st.markdown("### Highlights / Features")
-                # Prefer detailed API highlights, fall back to search data
+                st.markdown("---")
+                st.markdown("### Key Features & Highlights")
                 feats = item.get("product_highlights") or item.get("highlights") or item.get("features") or search_data.get("highlights") or []
                 if isinstance(feats, dict):
-                    feats = [f"{k}: {v}" for k,v in feats.items()]
-                if feats:
-                    for f in feats:
-                        st.write("•", f)
-                else:
-                    st.write("—")
+                    feats = [f"{k}: {v}" for k, v in feats.items()]
+                render_highlights(feats, style="chips")
 
-            if details:
-                st.markdown("### Raw details (debug)")
+            # Sellers comparison section
+            if show_sellers:
+                st.markdown("---")
+                st.markdown("### Price Comparison - All Sellers")
+                sellers = item.get("sellers") or item.get("offers") or []
+                if sellers:
+                    render_sellers(sellers, currency_symbol)
+                else:
+                    st.info("No multi-seller data available for this product")
+
+            # Raw JSON debug
+            if show_raw and details:
+                st.markdown("---")
+                st.markdown("### Raw API Response")
                 st.json(details)
