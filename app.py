@@ -12,7 +12,20 @@ st.set_page_config(page_title="Google Shopping Competitive Analysis", page_icon=
 # Custom CSS for image sizing and highlights
 st.markdown("""
 <style>
-/* Constrain image sizes */
+/* Force constrain carousel images */
+.carousel-img-wrapper {
+    max-width: 250px !important;
+    max-height: 250px !important;
+    overflow: hidden !important;
+}
+.carousel-img-wrapper img {
+    max-width: 250px !important;
+    max-height: 250px !important;
+    width: auto !important;
+    height: auto !important;
+    object-fit: contain !important;
+}
+/* Legacy - keep for backwards compat */
 .product-image-container img {
     max-height: 280px;
     width: auto;
@@ -171,9 +184,9 @@ def render_image_carousel(images: list, carousel_key: str, show_thumbnails: bool
     current_idx = max(0, min(current_idx, len(images) - 1))
     st.session_state[carousel_key] = current_idx  # Sync back
 
-    # Main image - force small size with HTML
+    # Main image - wrapped in div with CSS class for reliable sizing
     img_url = images[current_idx]
-    st.markdown(f'<img src="{img_url}" style="max-width: 250px; max-height: 250px; object-fit: contain;">', unsafe_allow_html=True)
+    st.markdown(f'<div class="carousel-img-wrapper"><img src="{img_url}"></div>', unsafe_allow_html=True)
 
     # Navigation controls
     if len(images) > 1:
