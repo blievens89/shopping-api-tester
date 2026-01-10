@@ -241,6 +241,7 @@ def render_sellers(sellers: list, currency_symbol: str = "£"):
         price = seller.get("price") or {}
         price_val = price.get("current") or price.get("regular") or seller.get("price")
         seller_name = seller.get("seller") or seller.get("title") or "Unknown"
+        price_display = f"{price_val:.2f}" if isinstance(price_val, (int, float)) else (price_val or "N/A")
 
         st.markdown(f'''
             <div class="seller-card">
@@ -249,7 +250,7 @@ def render_sellers(sellers: list, currency_symbol: str = "£"):
                         <strong>{seller_name}</strong><br>
                         <small style="color: #666;">{seller.get("delivery_info") or ""}</small>
                     </div>
-                    <div class="seller-price">{currency_symbol}{price_val:.2f if isinstance(price_val, (int, float)) else price_val}</div>
+                    <div class="seller-price">{currency_symbol}{price_display}</div>
                 </div>
             </div>
         ''', unsafe_allow_html=True)
