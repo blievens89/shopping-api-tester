@@ -171,10 +171,8 @@ def render_image_carousel(images: list, carousel_key: str, show_thumbnails: bool
     current_idx = max(0, min(current_idx, len(images) - 1))
     st.session_state[carousel_key] = current_idx  # Sync back
 
-    # Main image with constrained container
-    st.markdown(f'<div class="product-image-container">', unsafe_allow_html=True)
-    st.image(images[current_idx], use_column_width=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+    # Main image - constrained to reasonable size
+    st.image(images[current_idx], width=300)
 
     # Navigation controls
     if len(images) > 1:
@@ -356,10 +354,19 @@ if "results_df" in st.session_state:
     with tab1:
         st.subheader("Top 10 Products")
 
-        # Show data extraction stats
-        desc_count = df["description"].apply(lambda x: len(str(x)) > 0).sum() if "description" in df.columns else 0
-        img_count = df["images"].apply(lambda x: len(x) > 0 if isinstance(x, list) else False).sum() if "images" in df.columns else 0
-        highlights_count = df["highlights"].apply(lambda x: len(x) > 0 if isinstance(x, list) else False).sum() if "highlights" in df.columns else 0
+        # Show data extraction stats - check for actual content, not just non-empty strings
+        def has_real_content(x):
+            if x is None or pd.isna(x) if isinstance(x, float) else False:
+                return False
+            if isinstance(x, str):
+                return len(x.strip()) > 0 and x.strip().lower() not in ('none', 'nan', '')
+            if isinstance(x, list):
+                return len(x) > 0
+            return bool(x)
+
+        desc_count = df["description"].apply(has_real_content).sum() if "description" in df.columns else 0
+        img_count = df["images"].apply(lambda x: isinstance(x, list) and len(x) > 0).sum() if "images" in df.columns else 0
+        highlights_count = df["highlights"].apply(lambda x: isinstance(x, list) and len(x) > 0).sum() if "highlights" in df.columns else 0
 
         st.info(f"📊 Data extracted: **{desc_count}/{len(df)}** products with descriptions | **{img_count}/{len(df)}** with images | **{highlights_count}/{len(df)}** with highlights")
 
