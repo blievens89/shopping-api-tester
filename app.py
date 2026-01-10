@@ -100,8 +100,13 @@ if not login or not password:
     st.sidebar.error("Add DATAFORSEO_LOGIN and DATAFORSEO_PASSWORD to secrets or .env")
     st.stop()
 
+@st.cache_resource
+def get_api_client(api_login: str, api_password: str) -> DataForSEOClient:
+    """Cache the API client to avoid re-initialization on every rerun."""
+    return DataForSEOClient(api_login, api_password)
+
 try:
-    client = DataForSEOClient(login, password)
+    client = get_api_client(login, password)
     st.sidebar.success("API client ready")
 except Exception as e:
     st.sidebar.error(f"Init failed: {e}")
@@ -128,9 +133,9 @@ def search_with_progress(k: str, loc: int, dep: int):
     def on_tick(elapsed, maximum):
         pct = min(99, int((elapsed / max(1, maximum)) * 100))
         prog.progress(pct)
-        status.info(f"Polling DataForSEO… {elapsed}s / {maximum}s")
+        status.info(f"⏳ Fetching Google Shopping results... {elapsed}s (typically 10-30s)")
     data = client.search_products(keyword=k, location_code=loc, depth=dep, on_tick=on_tick)
-    prog.progress(100); status.success("Results received")
+    prog.progress(100); status.success("✅ Results received!")
     df = parse_shopping_results(data)
     return data, df
 
@@ -142,13 +147,13 @@ def get_cached_product_info(pid: str, loc: int):
         def on_tick(elapsed, maximum):
             pct = min(99, int((elapsed / max(1, maximum)) * 100))
             prog.progress(pct)
-            status.info(f"Fetching product details… {elapsed}s / {maximum}s")
+            status.info(f"⏳ Loading product details... {elapsed}s (typically 5-15s)")
         try:
             details = client.get_product_info(pid, location_code=loc, on_tick=on_tick)
-            prog.progress(100); status.success("Details cached")
+            prog.progress(100); status.success("✅ Product details loaded & cached")
             st.session_state[cache_key] = {"data": details, "error": None}
         except Exception as e:
-            status.error(f"Detail fetch failed: {e}")
+            status.error(f"❌ Could not load details: {e}")
             st.session_state[cache_key] = {"data": None, "error": str(e)}
     return st.session_state[cache_key]
 
@@ -268,10 +273,22 @@ if st.button("🔍 Search Products", type="primary"):
             st.success(f"Found {len(df)} products.")
     if uploaded:
         bulk = pd.read_csv(uploaded)
-        for k in bulk["keyword"].dropna().astype(str).tolist():
-            st.subheader(k)
+        # Deduplicate keywords to avoid redundant API calls
+        all_keywords = bulk["keyword"].dropna().astype(str).tolist()
+        unique_keywords = list(dict.fromkeys(all_keywords))  # Preserves order, removes dupes
+        duplicates_removed = len(all_keywords) - len(unique_keywords)
+
+        if duplicates_removed > 0:
+            st.info(f"📋 Removed {duplicates_removed} duplicate keyword(s). Processing {len(unique_keywords)} unique terms.")
+        else:
+            st.info(f"📋 Processing {len(unique_keywords)} keyword(s)...")
+
+        for i, k in enumerate(unique_keywords, 1):
+            st.subheader(f"({i}/{len(unique_keywords)}) {k}")
             raw, dfk = search_with_progress(k, location_code, depth)
             st.dataframe(dfk, use_container_width=True)
+
+        st.success(f"✅ Bulk processing complete! Searched {len(unique_keywords)} keywords.")
 
 if "results_df" in st.session_state:
     df = st.session_state.results_df.copy()
