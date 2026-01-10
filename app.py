@@ -171,8 +171,9 @@ def render_image_carousel(images: list, carousel_key: str, show_thumbnails: bool
     current_idx = max(0, min(current_idx, len(images) - 1))
     st.session_state[carousel_key] = current_idx  # Sync back
 
-    # Main image - constrained to reasonable size
-    st.image(images[current_idx], width=300)
+    # Main image - force small size with HTML
+    img_url = images[current_idx]
+    st.markdown(f'<img src="{img_url}" style="max-width: 250px; max-height: 250px; object-fit: contain;">', unsafe_allow_html=True)
 
     # Navigation controls
     if len(images) > 1:
@@ -255,7 +256,17 @@ def render_variations(variations: list):
     if badges:
         st.markdown(f'<div style="margin: 8px 0;">{"".join(badges)}</div>', unsafe_allow_html=True)
 
-if st.button("🔍 Search Products", type="primary"):
+col_search, col_clear = st.columns([3, 1])
+with col_search:
+    search_clicked = st.button("🔍 Search Products", type="primary")
+with col_clear:
+    if st.button("🗑️ Clear Results"):
+        for key in ["results_df", "keyword", "analysis"]:
+            if key in st.session_state:
+                del st.session_state[key]
+        st.rerun()
+
+if search_clicked:
     if not keyword and not uploaded:
         st.warning("Enter a keyword or upload a CSV")
     elif keyword:
